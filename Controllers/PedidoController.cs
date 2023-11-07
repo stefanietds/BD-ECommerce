@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
@@ -48,123 +49,86 @@ namespace LojaKids.Controllers
             }
         }
 
-        [HttpPost("CriarPedido")]
-        public async Task<IActionResult> Pedido([FromBody] PedidoDto pedidoDtos)
+
+         [HttpPost("CriarPedido")]
+         public async Task<IActionResult> CriarPedido(int idCliente, string metodoPagamento, List<ListaDeProdutos> produtos)
         {
-            using (var sqlConnection = new SqlConnection(_connectionString))
-            {
-                string queryVerificacao =
-                    "SELECT quantidade_estoque_produto FROM Produto WHERE id_produto = @IdProduto";
-                var parametrosVerificacao = new { IdProduto = pedidoDtos.IdProduto };
-
-                var quantidadeNoEstoque =
-                    await sqlConnection.ExecuteScalarAsync<int>(queryVerificacao, parametrosVerificacao);
-
-                if (quantidadeNoEstoque < pedidoDtos.QuantidadePedido)
-                {
-                    return BadRequest("Produto não disponível em quantidade suficiente no estoque.");
-                }
-            }
-
-            using (var sqlConnection = new SqlConnection(_connectionString))
-            {
-                string queryPreco = "SELECT preco_produto FROM Produto WHERE id_produto = @IdProduto";
-                decimal precoUnitario =
-                    await sqlConnection.QueryFirstOrDefaultAsync<decimal>(queryPreco,
-                        new { IdProduto = pedidoDtos.IdProduto });
-
-                decimal precoTotal = precoUnitario * pedidoDtos.QuantidadePedido;
-                decimal precoTotalPedido = precoTotal;
-
-                string queryInsert =
-                    @" BEGIN TRANSACTION; DECLARE @PedidoId INT; INSERT INTO Pedido (metodo_pagamento_pedido, fk_cliente, preco_final_pedido, observacao_pedido) 
-                VALUES (@MetodoPagamentoPedido, @IdCliente, @PrecoTotalPedido, @ObservacaoPedido);SET @PedidoId = SCOPE_IDENTITY();
-                INSERT INTO Info_Pedido (quantidade_pedido, fk_produto, preco_pedido, fk_pedido) 
-                VALUES (@QuantidadePedido, @IdProduto, @PrecoTotal, @PedidoId); 
-                UPDATE Produto SET quantidade_estoque_produto = quantidade_estoque_produto - (SELECT quantidade_pedido FROM 
-                Info_Pedido WHERE fk_pedido = @PedidoId) WHERE id_produto = @IdProduto; COMMIT;";
-
-                var parametrosPedido = new
-                {
-                    MetodoPagamentoPedido = pedidoDtos.MetodoPagamentoPedido,
-                    QuantidadePedido = pedidoDtos.QuantidadePedido,
-                    IdProduto = pedidoDtos.IdProduto,
-                    IdCliente = pedidoDtos.IdCliente,
-                    ObservacaoPedido = pedidoDtos.ObservacaoPedido,
-                    PrecoTotalPedido = precoTotalPedido,
-                    PrecoTotal = precoTotal
-                };
-
-                await sqlConnection.ExecuteAsync(queryInsert, parametrosPedido);
-            }
-
-            return Ok("Sucesso");
-        }
-/*
-        [HttpPost("CriarVariosPedido")]
-        public async Task<IActionResult> Pedido([FromBody] List<PedidoDto> listaPedidos)
+        using (var sqlConnection = new SqlConnection(_connectionString))
         {
+            // Iniciando uma transação
+            sqlConnection.Open();
+            var transaction = sqlConnection.BeginTransaction();
             decimal PrecoFinal = 0;
-            using (var sqlConnection = new SqlConnection(_connectionString))
+            
+            try
             {
-                foreach (var pedido in listaPedidos)
+                // Criar um novo pedido na tabela 's2' e obter seu ID recém-criado
+                int novoPedidoId = await sqlConnection.ExecuteScalarAsync<int>(
+                    "INSERT INTO Pedido (data_pedido, metodo_pagamento_pedido,preco_final_pedido, fk_cliente) OUTPUT Inserted.id_pedido VALUES (@DataPedido, @MetodoPagamento, 0, @FkCliente)",
+                    new
+                    {
+                        DataPedido = DateTime.Now,
+                        MetodoPagamento = metodoPagamento,
+                        FkCliente = idCliente
+                    },
+                    transaction
+                ); 
+                
+               
+                foreach (var produto in produtos)
                 {
-                    decimal precoTotal = 0;
-                    string queryVerificacao =
-                        "SELECT quantidade_estoque_produto FROM Produto WHERE id_produto = @IdProduto";
-                    var parametrosVerificacao = new { IdProduto = pedido.IdProduto };
+                    // Você precisará buscar o preço do produto da tabela 'produto' com o ID do produto recebido.
+                    decimal precoProduto = await sqlConnection.ExecuteScalarAsync<decimal>(
+                        "SELECT preco_produto FROM produto WHERE id_produto = @Id",
+                        new { Id = produto.IdProduto },
+                        transaction
+                    );
 
-                    var quantidadeNoEstoque =
-                        await sqlConnection.ExecuteScalarAsync<int>(queryVerificacao, parametrosVerificacao);
+                    
+                    await sqlConnection.ExecuteAsync(
+                        "INSERT INTO info_pedido (quantidade_pedido, preco_pedido, fk_pedido, fk_produto) VALUES (@Quantidade, @PrecoPedido, @FkPedido, @FkProduto)",
+                        new
+                        {
+                            Quantidade = produto.Quantidade,
+                            PrecoPedido = produto.Quantidade * precoProduto, 
+                            FkPedido = novoPedidoId,
+                            FkProduto = produto.IdProduto,
+                        },
+                        transaction
+                    );
 
-                    if (quantidadeNoEstoque < pedido.QuantidadePedido)
-                    {
-                        //transaction.Rollback();
-                        return BadRequest("Produto não disponível em quantidade suficiente no estoque.");
-                    }
-
-                    string queryPreco = "SELECT preco_produto FROM Produto WHERE id_produto = @IdProduto";
-                    decimal precoUnitario =
-                        await sqlConnection.QueryFirstOrDefaultAsync<decimal>(queryPreco,
-                            new { IdProduto = pedido.IdProduto });
-
-                    precoTotal = precoUnitario * pedido.QuantidadePedido;
-
-                    PrecoFinal = PrecoFinal + precoTotal;
-
-                    string queryInsert = @"
-                        INSERT INTO Pedido (metodo_pagamento_pedido, fk_cliente, preco_final_pedido) 
-                        VALUES (@MetodoPagamentoPedido, @IdCliente, @PrecoFinal);
-
-                        DECLARE @PedidoId INT;
-                        SET @PedidoId = SCOPE_IDENTITY();
-
-                        INSERT INTO Info_Pedido (quantidade_pedido, fk_produto, preco_pedido, fk_pedido) 
-                        VALUES (@QuantidadePedido, @IdProduto, @PrecoTotal, @PedidoId);
-
-                        UPDATE Produto
-                        SET quantidade_estoque_produto = quantidade_estoque_produto - @QuantidadePedido
-                        WHERE id_produto = @IdProduto;
-                    ";
-
-                    var parametrosPedido = new
-                    {
-                        MetodoPagamentoPedido = pedido.MetodoPagamentoPedido,
-                        QuantidadePedido = pedido.QuantidadePedido,
-                        IdProduto = pedido.IdProduto,
-                        IdCliente = pedido.IdCliente,
-                        PrecoFinal = PrecoFinal + precoTotal,
-                        precoTotal = precoUnitario * pedido.QuantidadePedido
-                    };
-
-                    await sqlConnection.ExecuteAsync(queryInsert, parametrosPedido);
+                    PrecoFinal += produto.Quantidade * precoProduto;
+                    
+                    await sqlConnection.ExecuteAsync(
+                        "UPDATE produto SET quantidade_estoque_produto = quantidade_estoque_produto - @Quantidade WHERE id_produto = @Id",
+                        new { Id = produto.IdProduto, Quantidade = produto.Quantidade },
+                        transaction
+                    );
                 }
 
+                await sqlConnection.ExecuteAsync(
+                    "UPDATE Pedido SET preco_final_pedido = @PrecoFinal WHERE id_pedido = @novoPedidoId",
+                    new
+                    {
+                        PrecoFinal = PrecoFinal,
+                        novoPedidoId = novoPedidoId
+                    },
+                    transaction
+                );
+
+                // Commit da transação se todas as operações forem bem-sucedidas
+                transaction.Commit();
+
+                return Ok("Pedido criado com sucesso.");
             }
-
-            return Ok("Pedidos realizados com sucesso");
-
-        }  */
+            catch (Exception ex)
+            {
+                // Rollback da transação em caso de erro
+                transaction.Rollback();
+                return StatusCode(500, "Erro ao criar o pedido: " + ex.Message);
+            }
+        }
+    }
 
 
     }
