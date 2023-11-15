@@ -24,53 +24,42 @@ namespace LojaKids.Controllers
             _configuration = configuration;
             _connectionString = _configuration.GetConnectionString("SqlConnection");
         }
-        
+
         [HttpPost("Autenticacão")]
-        public async Task<IActionResult> Autenticar([FromQuery] string nome, [FromQuery] string email)
+        public async Task<IActionResult> Autenticar([FromBody] Dados dados)
         {
-            using (var sqlConnection = new SqlConnection(_connectionString))
+            try
             {
-                // Verificar se o e-mail já existe no banco de dados
-                var usuarioExisteId = await sqlConnection.QueryFirstOrDefaultAsync<int>("SELECT id_cliente FROM Cliente WHERE email_cliente = @Email", new { Email = email });
+                using (var sqlConnection = new SqlConnection(_connectionString))
+                {
+                    var usuarioExisteId = await sqlConnection.QueryFirstOrDefaultAsync<int>(
+                        "SELECT id_cliente FROM Cliente WHERE email_cliente = @Email", new { Email = dados.Email });
+                    
+                    if (usuarioExisteId == 0)
+                    {
+                        var sqlInsert =
+                            "INSERT INTO Cliente (nome_cliente, email_cliente) VALUES (@Nome, @Email); SELECT SCOPE_IDENTITY()";
+                        var parameters = new { Nome = dados.Nome, Email = dados.Email };
 
-                if (usuarioExisteId == 0)
-                {
-                    var sqlInsert = "INSERT INTO Cliente (nome_cliente, email_cliente) VALUES (@Nome, @Email); SELECT SCOPE_IDENTITY()";
-                    var parameters = new { Nome = nome, Email = email };
-        
-                    var novoUsuarioId = await sqlConnection.ExecuteScalarAsync<int>(sqlInsert, parameters);
-                    return Ok("Novo usuário inserido com ID: " + novoUsuarioId);
-                }
-                else
-                {
-                    // Se o e-mail existe, retornar o ID do usuário existente
-                    return Ok("Usuário já existe com ID: " + usuarioExisteId);
+                        var novoUsuarioId = await sqlConnection.ExecuteScalarAsync<int>(sqlInsert, parameters);
+                        return Ok("Novo usuário inserido com ID: " + novoUsuarioId);
+                    }
+
+                    else
+                    {
+                        // Se o e-mail existe, retornar o ID do usuário existente
+                        return Ok("Usuário já existe com ID: " + usuarioExisteId);
+                    }
                 }
             }
-        }
-        /*
-        [HttpPost("InserirDados")]
-        public async Task<IActionResult> CadastrarCliente([FromBody] int id, [FromBody] string telefone, [FromBody] string endereco, [FromBody] string cpf)
-        {
-            using (var sqlConnection = new SqlConnection(_connectionString))
+            catch (Exception ex)
             {
-                var sqlInsert = "INSERT INTO Clientes (telefone, endereco, cpf) VALUES (@Telefone, @Endereco, @CPF)";
-                var parametros = new { Telefone = cliente.Telefone, Endereco = cliente.Endereco, CPF = cliente.CPF };
-
-                try
-                {
-                    await sqlConnection.ExecuteAsync(sqlInsert, parametros);
-                    return Ok("Cliente cadastrado com sucesso.");
-                }
-                catch (Exception ex)
-                {
-                    return StatusCode(500, "Erro ao cadastrar o cliente: " + ex.Message);
-                }
+                return StatusCode(500, $"Erro ao buscar: {ex.Message}");
             }
+            
         }
-        */
-        
-        
+
+
         [HttpPut("AtualizarDados")]
         public async Task<IActionResult> AtualizarDadosUsuario([FromQuery] int idcliente, [FromQuery] string telefone)
         {
@@ -93,10 +82,8 @@ namespace LojaKids.Controllers
                     // Lidar com exceções, como log, notificação ou retorno de erro
                     return StatusCode(500, "Erro ao atualizar dados do cliente: " + ex.Message);
                 }
-  
+
             }
         }
-        
-        
     }
 }

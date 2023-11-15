@@ -25,8 +25,7 @@ namespace LojaKids.Controllers
             {
                 using (var sqlConnection = new SqlConnection(_connectionString))
                 {
-                    const string sql = "SELECT Produto.*, Fornecedor.nome_marca AS nome_marca FROM Produto " +
-                                       "INNER JOIN Fornecedor ON Produto.fk_fornecedor = Fornecedor.CNPJ_marca";
+                    const string sql = "SELECT * FROM view_produtos";
 
                     var produtos = await sqlConnection.QueryAsync<Produto>(sql);
 

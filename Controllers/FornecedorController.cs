@@ -30,7 +30,7 @@ namespace LojaKids.Controllers
             {
                 using (var sqlConnection = new SqlConnection(_connectionString))
                 {
-                    const string sql = "SELECT * FROM Fornecedor";
+                    const string sql = "SELECT * FROM view_fornecedor";
 
                     var fornecedores = await sqlConnection.QueryAsync<Fornecedor>(sql);
 

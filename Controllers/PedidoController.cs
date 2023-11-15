@@ -33,10 +33,7 @@ namespace LojaKids.Controllers
                 {
 
 
-                    const string sql =
-                        "SELECT id_pedido as IdPedido, data_pedido as DataPedido, metodo_pagamento_pedido as" +
-                        " MetodoPagamentoPedido, preco_final_pedido as PrecoFinalPedido, fk_cliente as FkCliente" +
-                        " FROM pedido WHERE fk_cliente = @idcliente ";
+                    const string sql = "EXEC proc_pedidos @idcliente";
 
                     var pedidos = await sqlConnection.QueryAsync<Pedido>(sql, new { idcliente });
 
@@ -49,87 +46,51 @@ namespace LojaKids.Controllers
             }
         }
 
-
-         [HttpPost("CriarPedido")]
-         public async Task<IActionResult> CriarPedido(int idCliente, string metodoPagamento, List<ListaDeProdutos> produtos)
+        [HttpPost("CriarPedido")]
+        public async Task<IActionResult> CriarPedido(int idCliente, string metodoPagamento, List<ListaDeProdutos> produtos)
         {
-        using (var sqlConnection = new SqlConnection(_connectionString))
-        {
-            // Iniciando uma transação
-            sqlConnection.Open();
-            var transaction = sqlConnection.BeginTransaction();
-            decimal PrecoFinal = 0;
-            
-            try
+            using (var sqlConnection = new SqlConnection(_connectionString))
             {
-                // Criar um novo pedido na tabela 's2' e obter seu ID recém-criado
-                int novoPedidoId = await sqlConnection.ExecuteScalarAsync<int>(
-                    "INSERT INTO Pedido (data_pedido, metodo_pagamento_pedido,preco_final_pedido, fk_cliente) OUTPUT Inserted.id_pedido VALUES (@DataPedido, @MetodoPagamento, 0, @FkCliente)",
-                    new
-                    {
-                        DataPedido = DateTime.Now,
-                        MetodoPagamento = metodoPagamento,
-                        FkCliente = idCliente
-                    },
-                    transaction
-                ); 
-                
-               
-                foreach (var produto in produtos)
-                {
-                    // Você precisará buscar o preço do produto da tabela 'produto' com o ID do produto recebido.
-                    decimal precoProduto = await sqlConnection.ExecuteScalarAsync<decimal>(
-                        "SELECT preco_produto FROM produto WHERE id_produto = @Id",
-                        new { Id = produto.IdProduto },
-                        transaction
-                    );
+                sqlConnection.Open();
+                var transaction = sqlConnection.BeginTransaction();
 
-                    
-                    await sqlConnection.ExecuteAsync(
-                        "INSERT INTO info_pedido (quantidade_pedido, preco_pedido, fk_pedido, fk_produto) VALUES (@Quantidade, @PrecoPedido, @FkPedido, @FkProduto)",
+                try
+                {
+                    int novoPedidoId = await sqlConnection.ExecuteScalarAsync<int>(
+                        "INSERT INTO Pedido (data_pedido, metodo_pagamento_pedido, preco_final_pedido, fk_cliente) OUTPUT Inserted.id_pedido VALUES (@DataPedido, @MetodoPagamento, 0, @FkCliente)",
                         new
                         {
-                            Quantidade = produto.Quantidade,
-                            PrecoPedido = produto.Quantidade * precoProduto, 
-                            FkPedido = novoPedidoId,
-                            FkProduto = produto.IdProduto,
+                            DataPedido = DateTime.Now,
+                            MetodoPagamento = metodoPagamento,
+                            FkCliente = idCliente
                         },
                         transaction
                     );
 
-                    PrecoFinal += produto.Quantidade * precoProduto;
-                    
-                    await sqlConnection.ExecuteAsync(
-                        "UPDATE produto SET quantidade_estoque_produto = quantidade_estoque_produto - @Quantidade WHERE id_produto = @Id",
-                        new { Id = produto.IdProduto, Quantidade = produto.Quantidade },
-                        transaction
-                    );
-                }
-
-                await sqlConnection.ExecuteAsync(
-                    "UPDATE Pedido SET preco_final_pedido = @PrecoFinal WHERE id_pedido = @novoPedidoId",
-                    new
+                    foreach (var produto in produtos)
                     {
-                        PrecoFinal = PrecoFinal,
-                        novoPedidoId = novoPedidoId
-                    },
-                    transaction
-                );
+                        var parameters = new
+                        {
+                            IdPedido = novoPedidoId,
+                            IdProduto = produto.IdProduto,
+                            Quantidade = produto.Quantidade
+                        };
 
-                // Commit da transação se todas as operações forem bem-sucedidas
-                transaction.Commit();
+                        await sqlConnection.ExecuteAsync("proc_criarpedido", parameters, transaction, commandType: CommandType.StoredProcedure);
+                    }
 
-                return Ok("Pedido criado com sucesso.");
-            }
-            catch (Exception ex)
-            {
-                // Rollback da transação em caso de erro
-                transaction.Rollback();
-                return StatusCode(500, "Erro ao criar o pedido: " + ex.Message);
+                    transaction.Commit();
+
+                    return Ok("Pedido criado com sucesso.");
+                }
+                catch (Exception ex)
+                {
+                    // Rollback the transaction in case of an error
+                    transaction.Rollback();
+                    return StatusCode(500, "Erro ao criar o pedido: " + ex.Message);
+                }
             }
         }
-    }
-
-
+        
     }
 }

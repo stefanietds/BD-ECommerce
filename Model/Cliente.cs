@@ -31,9 +31,8 @@ public class Cliente
         EmailCliente = email_cliente;
         NomeCliente = nome_cliente;
     }
-    
+
     public Cliente()
     {
-        // Você pode inicializar os valores padrão, se necessário
     }
 }
