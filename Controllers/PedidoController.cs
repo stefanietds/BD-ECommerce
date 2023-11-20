@@ -1,12 +1,7 @@
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
-using System.Threading.Tasks;
 using Dapper;
 using LojaKids.Model;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LojaKids.Controllers
@@ -25,19 +20,26 @@ namespace LojaKids.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Pedidos([FromQuery] int idcliente)
+        public async Task<IActionResult> Pedidos([FromQuery] int IdCliente)
         {
             try
             {
                 using (var sqlConnection = new SqlConnection(_connectionString))
                 {
+                    const string sql = "EXEC proc_pedidos @IdCliente";
 
+                    var parameters = new { IdCliente };
 
-                    const string sql = "EXEC proc_pedidos @idcliente";
+                    var pedidos = await sqlConnection.QueryAsync(sql, parameters);
 
-                    var pedidos = await sqlConnection.QueryAsync<Pedido>(sql, new { idcliente });
-
-                    return Ok(pedidos);
+                    if (pedidos != null)
+                    {
+                        return Ok(pedidos);
+                    }
+                    else
+                    {
+                        return NotFound("não encontrado");
+                    }
                 }
             }
             catch (Exception ex)
@@ -57,10 +59,10 @@ namespace LojaKids.Controllers
                 try
                 {
                     int novoPedidoId = await sqlConnection.ExecuteScalarAsync<int>(
-                        "INSERT INTO Pedido (data_pedido, metodo_pagamento_pedido, preco_final_pedido, fk_cliente) OUTPUT Inserted.id_pedido VALUES (@DataPedido, @MetodoPagamento, 0, @FkCliente)",
+                        "INSERT INTO Pedido (data_pedido, metodo_pagamento_pedido, preco_final_pedido, fk_cliente) " +
+                        "OUTPUT Inserted.id_pedido VALUES (GETDATE(), @MetodoPagamento, 0, @FkCliente)",
                         new
                         {
-                            DataPedido = DateTime.Now,
                             MetodoPagamento = metodoPagamento,
                             FkCliente = idCliente
                         },
@@ -85,7 +87,6 @@ namespace LojaKids.Controllers
                 }
                 catch (Exception ex)
                 {
-                    // Rollback the transaction in case of an error
                     transaction.Rollback();
                     return StatusCode(500, "Erro ao criar o pedido: " + ex.Message);
                 }

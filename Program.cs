@@ -26,7 +26,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseRouting();
 
-// Aplicar a política CORS definida
 app.UseCors("NgOrigins");
 
 app.UseAuthorization();

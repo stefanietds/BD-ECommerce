@@ -32,6 +32,13 @@ public class Cliente
         NomeCliente = nome_cliente;
     }
 
+    public Cliente(int id_cliente, string telefone_cliente, string endereco_cliente)
+    {
+        IdCliente = id_cliente;
+        TelefoneCliente = telefone_cliente;
+        EnderecoCliente = endereco_cliente;
+    }
+
     public Cliente()
     {
     }

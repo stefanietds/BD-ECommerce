@@ -1,13 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Dapper;
 using LojaKids.Model;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LojaKids.Controllers
@@ -34,21 +27,23 @@ namespace LojaKids.Controllers
                 {
                     var usuarioExisteId = await sqlConnection.QueryFirstOrDefaultAsync<int>(
                         "SELECT id_cliente FROM Cliente WHERE email_cliente = @Email", new { Email = dados.Email });
-                    
+
                     if (usuarioExisteId == 0)
                     {
-                        var sqlInsert =
+                        const string sql =
                             "INSERT INTO Cliente (nome_cliente, email_cliente) VALUES (@Nome, @Email); SELECT SCOPE_IDENTITY()";
                         var parameters = new { Nome = dados.Nome, Email = dados.Email };
 
-                        var novoUsuarioId = await sqlConnection.ExecuteScalarAsync<int>(sqlInsert, parameters);
-                        return Ok("Novo usuário inserido com ID: " + novoUsuarioId);
+                        var novoUsuarioId = await sqlConnection.ExecuteScalarAsync<int>(sql, parameters);
+                        return Ok(novoUsuarioId);
                     }
-
                     else
                     {
-                        // Se o e-mail existe, retornar o ID do usuário existente
-                        return Ok("Usuário já existe com ID: " + usuarioExisteId);
+                        var cliente = await sqlConnection.QueryFirstOrDefaultAsync<int>(
+                            "SELECT id_cliente FROM Cliente WHERE email_cliente = @Email",
+                            new { Email = dados.Email });
+
+                        return Ok(cliente);
                     }
                 }
             }
@@ -56,34 +51,81 @@ namespace LojaKids.Controllers
             {
                 return StatusCode(500, $"Erro ao buscar: {ex.Message}");
             }
-            
+
+
         }
 
-
-        [HttpPut("AtualizarDados")]
-        public async Task<IActionResult> AtualizarDadosUsuario([FromQuery] int idcliente, [FromQuery] string telefone)
+        [HttpGet("GetDados")]
+        public async Task<IActionResult> GetTelefoneeEndereco([FromQuery] int IdCliente)
         {
-            using (var sqlConnection = new SqlConnection(_connectionString))
+            try
             {
-                const string sql = "UPDATE Cliente SET endereco_cliente = @endereco WHERE id_cliente = @idcliente";
-
-                // Utilização de DynamicParameters do Dapper para definir os parâmetros
-                var parameters = new DynamicParameters();
-                parameters.Add("@telefone", telefone);
-                parameters.Add("@idcliente", idcliente);
-
-                try
+                using (var sqlConnection = new SqlConnection(_connectionString))
                 {
-                    await sqlConnection.ExecuteAsync(sql, parameters);
-                    return Ok("Sucesso");
-                }
-                catch (Exception ex)
-                {
-                    // Lidar com exceções, como log, notificação ou retorno de erro
-                    return StatusCode(500, "Erro ao atualizar dados do cliente: " + ex.Message);
-                }
+                   
+                    const string sql = "SELECT * FROM Cliente WHERE id_cliente = @IdCliente";
 
+                    var parameters = new { IdCliente };
+
+                    var cliente = await sqlConnection.QueryFirstOrDefaultAsync(sql, parameters);
+
+                    if (cliente != null)
+                    {
+                        return Ok(cliente);
+                    }
+                    else
+                    {
+                        return NotFound("Cliente não encontrado");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao buscar: {ex.Message}");
             }
         }
-    }
+
+
+
+        [HttpPut]
+        public async Task<IActionResult> AtualizarCliente(AtualizaCliente dados)
+        {
+            try
+            {
+                using (var sqlConnection = new SqlConnection(_connectionString))
+                {
+                    const string sql =
+                        "UPDATE Cliente SET cpf_cliente = @Cpf, telefone_cliente = @Telefone, endereco_cliente = @Endereco WHERE id_cliente = @Id";
+
+                    var parameters = new
+                    {
+                        Cpf = dados.CpfCliente,
+                        Telefone = dados.TelefoneCliente,
+                        Endereco = dados.EnderecoCliente,
+                        Id = dados.IdCliente
+                    };
+
+                    var linhasAfetadas = await sqlConnection.ExecuteAsync(sql, parameters);
+
+                    if (linhasAfetadas  > 0)
+                    {
+                        return Ok("Cliente atualizado com sucesso");
+                    }
+                    else
+                    {
+                        return NotFound("Cliente não encontrado");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Erro ao atualizar o cliente: {ex.Message}");
+            }
+        }
+        }
+
+    
 }
+    
+
+
